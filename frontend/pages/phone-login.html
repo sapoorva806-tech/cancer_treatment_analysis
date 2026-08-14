@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log in with Phone — Hodgkin Risk Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center px-4">
+<div class="max-w-md w-full bg-white rounded-2xl shadow-md p-8 border border-slate-200">
+    <h1 class="text-2xl font-semibold text-slate-800 mb-1">Log in with phone</h1>
+    <p class="text-slate-500 text-sm mb-6">We'll send a one-time code to verify your number.</p>
+
+    <!-- Step 1: enter phone number -->
+    <div id="phoneStep">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Phone number</label>
+        <input type="tel" id="phoneNumber" placeholder="+1 555 123 4567" required
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4" />
+
+        <div id="phoneError" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4"></div>
+
+        <button id="sendOtpBtn"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition">
+            Send code
+        </button>
+    </div>
+
+    <!-- Step 2: enter OTP code -->
+    <div id="otpStep" class="hidden">
+        <p class="text-sm text-slate-600 mb-4">
+            A 6-digit code was sent to <span id="phoneDisplay" class="font-medium"></span>.
+            <br /><span class="text-xs text-slate-400">(Demo mode: check the backend terminal/console for the code — no real SMS is sent yet.)</span>
+        </p>
+
+        <label class="block text-sm font-medium text-slate-700 mb-1">Verification code</label>
+        <input type="text" id="otpCode" maxlength="6" inputmode="numeric" placeholder="123456" required
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-center tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4" />
+
+        <!-- Shown only if this phone number needs to register a new account -->
+        <div id="nameField" class="hidden mb-4">
+            <label class="block text-sm font-medium text-slate-700 mb-1">Full name</label>
+            <input type="text" id="fullName" minlength="2"
+                   class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-xs text-slate-400 mt-1">First time signing in with this number — tell us your name.</p>
+        </div>
+
+        <div id="otpError" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4"></div>
+
+        <button id="verifyOtpBtn"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition mb-2">
+            Verify & continue
+        </button>
+        <button id="backBtn" type="button"
+                class="w-full text-sm text-slate-500 hover:text-slate-700 py-2">
+            &larr; Use a different number
+        </button>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-6 text-center">
+        Prefer email? <a href="login.html" class="text-indigo-600 font-medium">Log in with email</a>
+    </p>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+    const phoneStep = document.getElementById("phoneStep");
+    const otpStep = document.getElementById("otpStep");
+    const phoneInput = document.getElementById("phoneNumber");
+    const phoneError = document.getElementById("phoneError");
+    const otpError = document.getElementById("otpError");
+    const nameField = document.getElementById("nameField");
+
+    let currentPhone = "";
+
+    document.getElementById("sendOtpBtn").addEventListener("click", async () => {
+      phoneError.classList.add("hidden");
+      const phone = phoneInput.value.trim();
+
+      if (!phone || phone.length < 8) {
+        phoneError.textContent = "Please enter a valid phone number.";
+        phoneError.classList.remove("hidden");
+        return;
+      }
+
+      const btn = document.getElementById("sendOtpBtn");
+      btn.disabled = true;
+      btn.textContent = "Sending...";
+
+      try {
+        await requestOtp(phone);
+        currentPhone = phone;
+        document.getElementById("phoneDisplay").textContent = phone;
+        phoneStep.classList.add("hidden");
+        otpStep.classList.remove("hidden");
+      } catch (err) {
+        phoneError.textContent = err.message;
+        phoneError.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Send code";
+      }
+    });
+
+    document.getElementById("verifyOtpBtn").addEventListener("click", async () => {
+      otpError.classList.add("hidden");
+      const code = document.getElementById("otpCode").value.trim();
+      const fullName = document.getElementById("fullName").value.trim();
+
+      if (code.length !== 6) {
+        otpError.textContent = "Enter the 6-digit code.";
+        otpError.classList.remove("hidden");
+        return;
+      }
+
+      const btn = document.getElementById("verifyOtpBtn");
+      btn.disabled = true;
+      btn.textContent = "Verifying...";
+
+      try {
+        await verifyOtp(currentPhone, code, fullName);
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        otpError.textContent = err.message;
+        otpError.classList.remove("hidden");
+
+        // If it's a new number, the backend requires a name — reveal that field
+        if (err.message.includes("full_name")) {
+          nameField.classList.remove("hidden");
+          otpError.textContent = "First time here — please also enter your name above.";
+        }
+        btn.disabled = false;
+        btn.textContent = "Verify & continue";
+      }
+    });
+
+    document.getElementById("backBtn").addEventListener("click", () => {
+      otpStep.classList.add("hidden");
+      phoneStep.classList.remove("hidden");
+      document.getElementById("otpCode").value = "";
+      nameField.classList.add("hidden");
+    });
+</script>
+</body>
+</html>

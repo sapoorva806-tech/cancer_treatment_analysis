@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard — Hodgkin Risk Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<nav class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+    <a href="dashboard.html" class="font-semibold text-slate-800">Hodgkin Risk Platform</a>
+    <div class="flex items-center gap-4">
+        <span class="text-xs bg-slate-800 text-white px-2 py-1 rounded-full font-medium">ADMIN</span>
+        <button id="logoutBtn" class="text-sm text-red-600 hover:text-red-700 font-medium">Log out</button>
+    </div>
+</nav>
+
+<main class="max-w-5xl mx-auto px-4 py-10">
+    <h1 class="text-2xl font-semibold text-slate-800 mb-1">Admin Dashboard</h1>
+    <p class="text-slate-500 text-sm mb-8">Platform-wide analytics and model performance. No individual user health data is shown here.</p>
+
+    <div id="loadingState" class="text-center py-16">
+        <p class="text-slate-500 text-sm">Loading admin data...</p>
+    </div>
+
+    <div id="errorState" class="hidden text-center py-16">
+        <p class="text-red-600 text-sm" id="errorMessage"></p>
+        <p class="text-slate-400 text-xs mt-2">If you see a 403 error, your account may not have admin privileges.</p>
+    </div>
+
+    <div id="adminContent" class="hidden">
+        <!-- Summary cards -->
+        <div class="grid sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <p class="text-xs text-slate-400 mb-1">Total users</p>
+                <p id="totalUsers" class="text-3xl font-bold text-slate-800">--</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <p class="text-xs text-slate-400 mb-1">Total assessments</p>
+                <p id="totalAssessmentsAll" class="text-3xl font-bold text-slate-800">--</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <p class="text-xs text-slate-400 mb-1">Mean risk %</p>
+                <p id="meanRisk" class="text-3xl font-bold text-slate-800">--</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <p class="text-xs text-slate-400 mb-1">Risk range</p>
+                <p id="riskRange" class="text-lg font-bold text-slate-800">--</p>
+            </div>
+        </div>
+
+        <!-- Assessments per day -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-6">
+            <h2 class="text-sm font-medium text-slate-500 mb-4">Assessments per day</h2>
+            <canvas id="assessmentsPerDayChart" height="80"></canvas>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-6 mb-6">
+            <!-- Top symptoms platform-wide -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <h2 class="text-sm font-medium text-slate-500 mb-4">Most common symptoms (all users)</h2>
+                <canvas id="topSymptomsChart"></canvas>
+            </div>
+
+            <!-- Aggregate risk distribution -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6">
+                <h2 class="text-sm font-medium text-slate-500 mb-4">Aggregate risk distribution</h2>
+                <canvas id="aggRiskChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Model performance -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6">
+            <h2 class="text-sm font-medium text-slate-500 mb-4">Model performance (held-out test set)</h2>
+            <div id="modelMetrics" class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm"></div>
+            <p id="modelNote" class="text-xs text-slate-400 mt-4"></p>
+        </div>
+    </div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+    requireAuth();
+    document.getElementById("logoutBtn").addEventListener("click", logout);
+
+    const SYMPTOM_LABELS = {
+      swollen_lymph_nodes: "Swollen lymph nodes",
+      fever: "Fever",
+      night_sweats: "Night sweats",
+      weight_loss: "Weight loss",
+      fatigue: "Fatigue",
+      itching: "Itching",
+      shortness_of_breath: "Shortness of breath",
+      chest_discomfort: "Chest discomfort",
+      cough: "Cough",
+      abdominal_symptoms: "Abdominal symptoms",
+      loss_of_appetite: "Loss of appetite",
+    };
+
+    (async () => {
+      try {
+        const [overview, performance] = await Promise.all([
+          apiFetch("/admin/analytics"),
+          apiFetch("/admin/model-performance").catch(() => null), // ok if no model trained yet
+        ]);
+
+        document.getElementById("loadingState").classList.add("hidden");
+
+        document.getElementById("totalUsers").textContent = overview.total_users;
+        document.getElementById("totalAssessmentsAll").textContent = overview.total_assessments;
+        document.getElementById("meanRisk").textContent =
+          overview.prediction_distribution.mean !== null ? `${overview.prediction_distribution.mean}%` : "N/A";
+        document.getElementById("riskRange").textContent =
+          overview.prediction_distribution.min !== null
+            ? `${overview.prediction_distribution.min}% – ${overview.prediction_distribution.max}%`
+            : "N/A";
+
+        // --- Assessments per day ---
+        new Chart(document.getElementById("assessmentsPerDayChart"), {
+          type: "bar",
+          data: {
+            labels: overview.assessments_per_day.map(d => d.date),
+            datasets: [{
+              label: "Assessments",
+              data: overview.assessments_per_day.map(d => d.count),
+              backgroundColor: "#4f46e5",
+              borderRadius: 4,
+            }],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          },
+        });
+
+        // --- Top symptoms ---
+        new Chart(document.getElementById("topSymptomsChart"), {
+          type: "bar",
+          data: {
+            labels: overview.top_symptoms.map(s => SYMPTOM_LABELS[s.symptom] || s.symptom),
+            datasets: [{
+              label: "Occurrences",
+              data: overview.top_symptoms.map(s => s.count),
+              backgroundColor: "#4f46e5",
+              borderRadius: 4,
+            }],
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          },
+        });
+
+        // --- Aggregate risk distribution ---
+        new Chart(document.getElementById("aggRiskChart"), {
+          type: "doughnut",
+          data: {
+            labels: overview.aggregate_risk_distribution.map(b => `${b.bucket}%`),
+            datasets: [{
+              data: overview.aggregate_risk_distribution.map(b => b.count),
+              backgroundColor: ["#16a34a", "#4f46e5", "#f59e0b", "#dc2626"],
+            }],
+          },
+          options: { responsive: true, plugins: { legend: { position: "bottom" } } },
+        });
+
+        // --- Model performance ---
+        const metricsEl = document.getElementById("modelMetrics");
+        if (performance && performance.test_metrics) {
+          const m = performance.test_metrics;
+          const items = [
+            ["Accuracy", m.accuracy],
+            ["Precision", m.precision],
+            ["Recall", m.recall],
+            ["F1 Score", m.f1],
+            ["ROC-AUC", m.roc_auc],
+            ["Sensitivity", m.sensitivity],
+            ["Specificity", m.specificity],
+            ["Version", performance.model_version],
+          ];
+          metricsEl.innerHTML = items.map(([label, val]) => `
+            <div>
+              <p class="text-xs text-slate-400">${label}</p>
+              <p class="font-semibold text-slate-800">${typeof val === "number" ? val.toFixed(3) : val}</p>
+            </div>
+          `).join("");
+          document.getElementById("modelNote").textContent = performance.note || "";
+        } else {
+          metricsEl.innerHTML = `<p class="text-sm text-slate-400 col-span-4">No trained model metrics available.</p>`;
+        }
+
+        document.getElementById("adminContent").classList.remove("hidden");
+      } catch (err) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("errorMessage").textContent = err.message;
+        document.getElementById("errorState").classList.remove("hidden");
+      }
+    })();
+</script>
+</body>
+</html>
