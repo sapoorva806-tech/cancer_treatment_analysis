@@ -10,9 +10,7 @@ env/
 .env
 backend/.env
 
-# ML artifacts (large files, don't commit trained models/data)
-ml/models/*.pth
-ml/models/*.json
+# ML artifacts
 ml/data/*.csv
 
 # Node (if any tooling added later)
