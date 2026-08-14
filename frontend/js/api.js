@@ -1,4 +1,8 @@
-const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE) || "http://localhost:8000/api";
+const API_BASE =
+  (window.APP_CONFIG && window.APP_CONFIG.API_BASE) ||
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000/api"
+    : "https://cancer-treatment-analysis.onrender.com/api");
 
 const TOKEN_KEY = "hodgkin_access_token";
 
