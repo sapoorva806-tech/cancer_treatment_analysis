@@ -3,16 +3,24 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.core.config import settings
 
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+database_url = settings.DATABASE_URL
 
-Base = declarative_base()
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1
+    )
+elif database_url.startswith("postgres://"):
+    database_url = database_url.replace(
+        "postgres://",
+        "postgresql+psycopg://",
+        1
+    )
 
-
-def get_db():
-    """FastAPI dependency that provides a database session per request."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+engine = create_engine(database_url)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
